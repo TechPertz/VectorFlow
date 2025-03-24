@@ -1,38 +1,48 @@
 from pydantic import BaseModel
+from uuid import UUID, uuid4
 from datetime import datetime
 from typing import List, Optional
-from uuid import UUID, uuid4
 
 class ChunkMetadata(BaseModel):
     name: str
-    created_at: datetime
+    created_at: datetime = datetime.now()
 
-class ChunkCreate(BaseModel):
+class ChunkBase(BaseModel):
     text: str
     embedding: List[float]
     metadata: ChunkMetadata
 
-class Chunk(ChunkCreate):
-    id: UUID
+class ChunkCreate(ChunkBase):
+    pass
+
+class Chunk(ChunkBase):
+    id: UUID = uuid4()
 
 class DocumentMetadata(BaseModel):
     title: str
     author: str
 
-class DocumentCreate(BaseModel):
+class DocumentBase(BaseModel):
     metadata: DocumentMetadata
 
-class Document(DocumentCreate):
-    id: UUID
+class DocumentCreate(DocumentBase):
+    pass
+
+class Document(DocumentBase):
+    id: UUID = uuid4()
     chunks: List[Chunk] = []
 
 class LibraryMetadata(BaseModel):
     description: str
 
-class LibraryCreate(BaseModel):
+class LibraryBase(BaseModel):
     name: str
     metadata: LibraryMetadata
 
-class Library(LibraryCreate):
-    id: UUID
+class LibraryCreate(LibraryBase):
+    pass
+
+class Library(LibraryBase):
+    id: UUID = uuid4()
     documents: List[Document] = []
+    index: Optional[object] = None
