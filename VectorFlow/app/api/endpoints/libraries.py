@@ -6,6 +6,7 @@ from app.core.deps import get_db
 from app.db.database import VectorDatabase
 from app.models import Library, LibraryCreate
 from app.services import Indexer
+from app.services.indexes import LinearIndex, KDTreeIndex
 
 router = APIRouter()
 
@@ -71,10 +72,24 @@ async def vector_search(
     if not lib or not lib.index:
         raise HTTPException(status_code=400, detail="Library not indexed")
     
-    if len(query) != len(lib.index.chunks[0].embedding):
+    # Get the first chunk's embedding dimension based on index type
+    if isinstance(lib.index, LinearIndex):
+        # For LinearIndex, chunks are directly accessible
+        embedding_dim = len(lib.index.chunks[0].embedding)
+    elif isinstance(lib.index, KDTreeIndex):
+        # For KDTreeIndex, get embedding from the root node
+        embedding_dim = len(lib.index.root.chunk.embedding)
+    else:
+        # Handle any other index types that might be added in the future
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported index type"
+        )
+        
+    if len(query) != embedding_dim:
         raise HTTPException(
             status_code=400, 
-            detail=f"Query dimension mismatch. Expected {len(lib.index.chunks[0].embedding)}"
+            detail=f"Query dimension mismatch. Expected {embedding_dim}"
         )
     
     return lib.index.query(query, k) 
