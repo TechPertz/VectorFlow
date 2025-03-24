@@ -6,7 +6,7 @@ from app.core.deps import get_db
 from app.db.database import VectorDatabase
 from app.models import Library, LibraryCreate
 from app.services import Indexer
-from app.services.indexes import LinearIndex, KDTreeIndex
+from app.services.indexes import LinearIndex, KDTreeIndex, LSHIndex
 
 router = APIRouter()
 
@@ -79,6 +79,14 @@ async def vector_search(
     elif isinstance(lib.index, KDTreeIndex):
         # For KDTreeIndex, get embedding from the root node
         embedding_dim = len(lib.index.root.chunk.embedding)
+    elif isinstance(lib.index, LSHIndex):
+        # For LSHIndex, get dimension from hyperplanes
+        if not lib.index.hyperplanes:
+            raise HTTPException(
+                status_code=400,
+                detail="LSH index has no hyperplanes"
+            )
+        embedding_dim = len(lib.index.hyperplanes[0])
     else:
         # Handle any other index types that might be added in the future
         raise HTTPException(

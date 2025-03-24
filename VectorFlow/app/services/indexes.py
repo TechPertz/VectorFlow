@@ -1,6 +1,7 @@
 import heapq
 import random
-from typing import List
+from typing import List, DefaultDict
+from collections import defaultdict
 from app.models import Chunk
 
 class LinearIndex:
@@ -90,6 +91,62 @@ class KDTreeIndex:
         _search(self.root)
         return [c for _, c in sorted(heap, reverse=True)]
 
+class LSHIndex:
+    __slots__ = ['tables', 'hyperplanes', 'num_tables', 'hash_size']
+    
+    def __init__(self, chunks: List[Chunk], num_tables=4, hash_size=8):
+        self.num_tables = num_tables
+        self.hash_size = hash_size
+        self.tables: List[DefaultDict[int, List[Chunk]]] = [defaultdict(list) for _ in range(num_tables)]
+        
+        if not chunks:
+            self.hyperplanes = []
+            return
+            
+        dim = len(chunks[0].embedding)
+        self.hyperplanes = [
+            [random.gauss(0, 1) for _ in range(dim)]
+            for _ in range(num_tables * hash_size)
+        ]
+        
+        for chunk in chunks:
+            for ti in range(num_tables):
+                hash_val = self._compute_hash(chunk.embedding, ti)
+                self.tables[ti][hash_val].append(chunk)
+    
+    def _compute_hash(self, vec: List[float], table_idx: int) -> int:
+        hash_val = 0
+        for h in range(self.hash_size):
+            hp = self.hyperplanes[table_idx * self.hash_size + h]
+            hash_val |= (1 << h) if sum(x*y for x,y in zip(vec, hp)) >= 0 else 0
+        return hash_val
+    
+    def query(self, query: List[float], k: int) -> List[Chunk]:
+        candidates = []
+        for ti in range(self.num_tables):
+            hash_val = self._compute_hash(query, ti)
+            candidates.extend(self.tables[ti][hash_val])
+        
+        # Remove duplicates without using set (since Chunk may not be hashable)
+        # We'll use a list to keep track of seen chunks by ID
+        unique_candidates = []
+        seen_chunk_ids = set()
+        
+        for chunk in candidates:
+            # Use object ID as a unique identifier since Chunk may not have an id attribute
+            chunk_id = id(chunk)
+            if chunk_id not in seen_chunk_ids:
+                seen_chunk_ids.add(chunk_id)
+                unique_candidates.append(chunk)
+                
+                # Limit to 3*k candidates for efficiency
+                if len(unique_candidates) >= 3*k:
+                    break
+        
+        # Rerank candidates using exact distance
+        return LinearIndex(unique_candidates).query(query, k)
+
+
 class Indexer:
     @staticmethod
     def create_index(chunks: List[Chunk], algorithm: str):
@@ -100,4 +157,6 @@ class Indexer:
             return LinearIndex(chunks)
         elif algorithm == "kd_tree":
             return KDTreeIndex(chunks)
+        elif algorithm == "lsh":
+            return LSHIndex(chunks)
         raise ValueError(f"Unknown algorithm: {algorithm}") 
