@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from uuid import UUID, uuid4
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Any
 
 class ChunkMetadata(BaseModel):
     name: str
@@ -45,4 +45,4 @@ class LibraryCreate(LibraryBase):
 class Library(LibraryBase):
     id: UUID = uuid4()
     documents: List[Document] = []
-    index: Optional[object] = None
+    index: Optional[Any] = None 
