@@ -200,13 +200,12 @@ class LSHIndex:
         self.normalize = normalize
         self.max_candidates = max_candidates
         self.tables: List[DefaultDict[int, List[Chunk]]] = [defaultdict(list) for _ in range(num_tables)]
+        self.hyperplanes = []
         
         if not chunks:
-            self.hyperplanes = []
             return
         
         dim = len(chunks[0].embedding)
-        self.hyperplanes = []
         
         for _ in range(num_tables * hash_size):
 
@@ -240,12 +239,15 @@ class LSHIndex:
     def query(self, query: List[float], k: int) -> List[Chunk]:
         print(f"LSHIndex.query called with k={k}")
 
+        if not self.hyperplanes:
+            print(f"LSHIndex: No hyperplanes, returning empty results")
+            return []
+
         if self.normalize:
             norm = math.sqrt(sum(x*x for x in query))
             if norm > 0:
                 query = [x/norm for x in query]
         
-        # First try the exact bucket matches
         candidates = []
         hash_vals = []
         
@@ -256,33 +258,24 @@ class LSHIndex:
         
         print(f"LSHIndex found {len(candidates)} initial candidates")
         
-        # If we don't have enough candidates, try neighboring buckets
         if len(candidates) < k:
             print(f"Not enough candidates, exploring neighboring buckets")
-            # For each hash table
             for ti in range(self.num_tables):
                 original_hash = hash_vals[ti]
                 
-                # First try flipping each bit of the hash to find neighboring buckets
                 for bit in range(self.hash_size):
-                    # Create a neighbor hash by flipping a bit
                     neighbor_hash = original_hash ^ (1 << bit)
-                    # Only look at this bucket if we haven't seen it already
                     if neighbor_hash != original_hash:
                         candidates.extend(self.tables[ti][neighbor_hash])
                 
-                # If still not enough candidates, try flipping two bits (more distant neighbors)
                 if len(candidates) < k * 2:
                     print(f"Still not enough candidates, exploring more distant buckets")
                     for bit1 in range(self.hash_size):
                         for bit2 in range(bit1 + 1, self.hash_size):
-                            # Create a neighbor hash by flipping two bits
                             neighbor_hash = original_hash ^ (1 << bit1) ^ (1 << bit2)
-                            # Add candidates from this bucket
                             candidates.extend(self.tables[ti][neighbor_hash])
                             
-                            # Stop if we have enough candidates
-                            if len(candidates) >= k * 3:  # Get more than k to account for duplicates
+                            if len(candidates) >= k * 3:
                                 break
                         if len(candidates) >= k * 3:
                             break
@@ -290,7 +283,6 @@ class LSHIndex:
                 if len(candidates) >= k * 3:
                     break
         
-        # Deduplicate candidates
         unique_candidates = []
         seen_chunk_ids = set()
         
@@ -302,28 +294,21 @@ class LSHIndex:
         
         print(f"LSHIndex found {len(unique_candidates)} unique candidates")
         
-        # If we still don't have enough candidates, but we have some data in the index
-        # Fall back to a more exhaustive search only if we have less than k candidates
         if len(unique_candidates) < k and len(self.tables) > 0 and any(len(table) > 0 for table in self.tables):
-            # We'll gather a sample of chunks from all tables, biased toward less common buckets
-            # which are more likely to contain meaningful results
             print(f"LSHIndex: Falling back to broader search strategy")
             
             extra_candidates = []
             extra_chunk_ids = set(id(chunk) for chunk in unique_candidates)
             
-            # Collect chunks from smaller buckets first (they're more specific/meaningful)
             all_buckets = []
             for ti in range(self.num_tables):
                 for hash_val, chunks in self.tables[ti].items():
-                    if hash_val not in hash_vals:  # Don't include already searched buckets
+                    if hash_val not in hash_vals:
                         all_buckets.append((len(chunks), ti, hash_val))
             
-            # Sort buckets by size (smallest first)
             all_buckets.sort()
             
-            # Take chunks from smaller buckets until we have enough
-            chunks_needed = max(k - len(unique_candidates), k)  # At least k more
+            chunks_needed = max(k - len(unique_candidates), k)
             for _, ti, hash_val in all_buckets:
                 for chunk in self.tables[ti][hash_val]:
                     chunk_id = id(chunk)
@@ -339,10 +324,8 @@ class LSHIndex:
             print(f"LSHIndex: Added {len(extra_candidates)} extra candidates from smaller buckets")
             unique_candidates.extend(extra_candidates)
         
-        # If we still don't have enough candidates, we'll return what we have
         if len(unique_candidates) < k:
             print(f"LSHIndex: Only found {len(unique_candidates)} candidates for requested k={k}")
-            # Just sort the candidates we have by similarity and return them
             if self.normalize:
                 dist_candidates = [
                     (-sum(q*v for q, v in zip(query, chunk.embedding)), chunk) 

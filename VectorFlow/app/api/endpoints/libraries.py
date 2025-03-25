@@ -73,15 +73,11 @@ async def vector_search(
     if not lib or not lib.index:
         raise HTTPException(status_code=400, detail="Library not indexed")
     
-    # Get the first chunk's embedding dimension based on index type
     if isinstance(lib.index, LinearIndex):
-        # For LinearIndex, chunks are directly accessible
         embedding_dim = len(lib.index.chunks[0].embedding)
     elif isinstance(lib.index, KDTreeIndex):
-        # For KDTreeIndex, get embedding from the root node
         embedding_dim = len(lib.index.root.chunk.embedding)
     elif isinstance(lib.index, LSHIndex):
-        # For LSHIndex, get dimension from hyperplanes
         if not lib.index.hyperplanes:
             raise HTTPException(
                 status_code=400,
@@ -89,7 +85,6 @@ async def vector_search(
             )
         embedding_dim = len(lib.index.hyperplanes[0])
     else:
-        # Handle any other index types that might be added in the future
         raise HTTPException(
             status_code=400,
             detail="Unsupported index type"
@@ -117,7 +112,6 @@ async def text_search(
     Example request body:
     {"text": "What are transformer models?"}
     """
-    # Validate input
     if "text" not in text_query:
         raise HTTPException(status_code=400, detail="Request body must contain a 'text' field")
     
@@ -125,22 +119,19 @@ async def text_search(
     if not query_text or not isinstance(query_text, str):
         raise HTTPException(status_code=400, detail="Text query must be a non-empty string")
     
-    # Get the library
     lib = await db.get_library(library_id)
-    if not lib or not lib.index:
+    if not lib:
+        raise HTTPException(status_code=404, detail="Library not found")
+    if not lib.index:
         raise HTTPException(status_code=400, detail="Library not indexed")
     
     try:
-        # Generate embedding for the query text using Cohere
         embeddings = await generate_cohere_embeddings([query_text])
         
-        # Use the generated embedding to perform the search
         query_embedding = embeddings[0]
         
-        # Return the search results
         results = lib.index.query(query_embedding, k)
         
-        # Extract relevant fields for the response to ensure proper serialization
         serialized_results = []
         for chunk in results:
             serialized_results.append({
@@ -149,7 +140,6 @@ async def text_search(
                 "metadata": chunk.metadata.dict()
             })
         
-        # Add the original query text to the response for reference
         return {
             "query_text": query_text,
             "results_count": len(results),
