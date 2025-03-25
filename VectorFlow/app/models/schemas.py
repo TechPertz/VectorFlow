@@ -45,4 +45,9 @@ class LibraryCreate(LibraryBase):
 class Library(LibraryBase):
     id: UUID = uuid4()
     documents: List[Document] = []
-    index: Optional[Any] = None 
+    index: Optional[Any] = None
+
+class BatchTextInput(BaseModel):
+    texts: List[str]
+    metadata: List[ChunkMetadata]
+    document_id: UUID 
