@@ -51,20 +51,16 @@ async def create_batch_chunks_with_embeddings(
     Process a batch of texts, generate embeddings using Cohere API, and add them as chunks.
     """
     try:
-        # Generate embeddings with Cohere
         embeddings = await generate_cohere_embeddings(batch_input.texts)
         
-        # Create and add chunks
         added_chunks = []
         for i, (text, embedding) in enumerate(zip(batch_input.texts, embeddings)):
-            # Create a new chunk
             chunk = Chunk(
                 text=text,
                 embedding=embedding,
                 metadata=batch_input.metadata[i] if i < len(batch_input.metadata) else ChunkMetadata(name=f"chunk_{i}")
             )
             
-            # Add the chunk to the database
             added_chunk = await db.add_chunk(library_id, batch_input.document_id, chunk)
             added_chunks.append(added_chunk)
             
