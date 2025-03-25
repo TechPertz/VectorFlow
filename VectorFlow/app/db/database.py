@@ -90,4 +90,20 @@ class VectorDatabase:
         if not doc:
             raise ValueError(f"Document with ID {document_id} not found in library {library_id}")
         
-        return doc.chunks 
+        return doc.chunks
+
+    async def get_all_libraries(self) -> List[Library]:
+        """
+        Retrieve all libraries in the database.
+        """
+        return list(self.libraries.values())
+
+    async def get_all_documents(self, library_id: UUID) -> List[Document]:
+        """
+        Retrieve all documents in a specific library.
+        """
+        lib = self.libraries.get(library_id)
+        if not lib:
+            raise ValueError(f"Library with ID {library_id} not found")
+        
+        return lib.documents 

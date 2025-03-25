@@ -4,12 +4,28 @@ from uuid import UUID
 
 from app.core.deps import get_db
 from app.db.database import VectorDatabase
-from app.models import Library, LibraryCreate
+from app.models import Library, LibraryCreate, LibraryResponse, LibrarySummary
 from app.services import Indexer
 from app.services.indexes import LinearIndex, KDTreeIndex, LSHIndex
 from app.services.embeddings import generate_cohere_embeddings
 
 router = APIRouter()
+
+@router.get("/", response_model=List[LibrarySummary])
+async def get_all_libraries(db: VectorDatabase = Depends(get_db)):
+    """
+    Retrieve all libraries with summary information.
+    """
+    libraries = await db.get_all_libraries()
+    return [
+        LibrarySummary(
+            id=lib.id,
+            name=lib.name,
+            metadata=lib.metadata,
+            document_count=len(lib.documents)
+        )
+        for lib in libraries
+    ]
 
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=Library)
 async def create_library(library_create: LibraryCreate, db: VectorDatabase = Depends(get_db)):
@@ -22,15 +38,20 @@ async def create_library(library_create: LibraryCreate, db: VectorDatabase = Dep
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/{library_id}", response_model=Library)
+@router.get("/{library_id}", response_model=LibrarySummary)
 async def get_library(library_id: UUID, db: VectorDatabase = Depends(get_db)):
     """
-    Retrieve a library by its ID.
+    Retrieve a library by its ID with summary information.
     """
     lib = await db.get_library(library_id)
     if not lib:
         raise HTTPException(status_code=404, detail="Library not found")
-    return lib
+    return LibrarySummary(
+        id=lib.id,
+        name=lib.name,
+        metadata=lib.metadata,
+        document_count=len(lib.documents)
+    )
 
 @router.delete("/{library_id}", status_code=status.HTTP_200_OK)
 async def delete_library(library_id: UUID, db: VectorDatabase = Depends(get_db)):
