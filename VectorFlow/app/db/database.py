@@ -1,6 +1,6 @@
 import asyncio
 from uuid import UUID
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 from app.models import Library, Document, Chunk
 
@@ -66,4 +66,28 @@ class VectorDatabase:
                 raise ValueError("Library not found")
             doc = next((d for d in lib.documents if d.id == document_id), None)
             if doc:
-                doc.chunks = [c for c in doc.chunks if c.id != chunk_id] 
+                doc.chunks = [c for c in doc.chunks if c.id != chunk_id]
+
+    async def get_document_chunks(self, library_id: UUID, document_id: UUID) -> List[Chunk]:
+        """
+        Retrieve all chunks associated with a specific document.
+        
+        Args:
+            library_id: The ID of the library
+            document_id: The ID of the document
+            
+        Returns:
+            A list of Chunk objects
+            
+        Raises:
+            ValueError: If the library or document doesn't exist
+        """
+        lib = self.libraries.get(library_id)
+        if not lib:
+            raise ValueError(f"Library with ID {library_id} not found")
+        
+        doc = next((d for d in lib.documents if d.id == document_id), None)
+        if not doc:
+            raise ValueError(f"Document with ID {document_id} not found in library {library_id}")
+        
+        return doc.chunks 

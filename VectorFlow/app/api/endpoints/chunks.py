@@ -68,4 +68,21 @@ async def create_batch_chunks_with_embeddings(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating embeddings: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Error generating embeddings: {str(e)}")
+
+@router.get("/{library_id}/documents/{document_id}/chunks", status_code=status.HTTP_200_OK, response_model=List[Chunk])
+async def get_document_chunks(
+    library_id: UUID, 
+    document_id: UUID, 
+    db: VectorDatabase = Depends(get_db)
+):
+    """
+    Retrieve all chunks belonging to a specific document.
+    """
+    try:
+        chunks = await db.get_document_chunks(library_id, document_id)
+        return chunks
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving chunks: {str(e)}") 
