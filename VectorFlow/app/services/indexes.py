@@ -67,13 +67,57 @@ class KDTreeIndex:
             self.left = None
             self.right = None
 
-    def __init__(self, chunks: List[Chunk]):
+    def __init__(self, chunks: List[Chunk], dim_threshold: int = 20):
+        
+        if not chunks:
+            self.root = None
+            return
+            
+        dim = len(chunks[0].embedding)
+        if dim > dim_threshold:
+            import warnings
+            warnings.warn(
+                f"KD-Tree performance degrades in high dimensions. "
+                f"Current dimensionality ({dim}) exceeds recommended threshold ({dim_threshold}). "
+                f"Consider using LSH for better performance with high-dimensional data.",
+                RuntimeWarning
+            )
+        
         self.root = self._build(chunks, 0)
     
+    def _find_split_axis(self, chunks: List[Chunk], depth: int) -> int:
+        
+        if not chunks:
+            return 0
+            
+        dim = len(chunks[0].embedding)
+        if len(chunks) <= 1:
+            return depth % dim
+            
+        variances = []
+        for axis in range(dim):
+            values = [chunk.embedding[axis] for chunk in chunks]
+            mean = sum(values) / len(values)
+            variance = sum((x - mean) ** 2 for x in values) / len(values)
+            variances.append((variance, axis))
+            
+        return max(variances)[1]
+    
     def _build(self, chunks: List[Chunk], depth: int):
+        """
+        Build the KD-Tree recursively.
+        
+        Args:
+            chunks: List of chunks to organize in the tree
+            depth: Current depth in the tree
+        
+        Returns:
+            Root node of the subtree
+        """
         if not chunks:
             return None
-        axis = depth % len(chunks[0].embedding)
+            
+        axis = self._find_split_axis(chunks, depth)
         
         mid = len(chunks) // 2
         self._quickselect(chunks, mid, axis)
@@ -86,7 +130,7 @@ class KDTreeIndex:
     def _quickselect(self, arr, k, axis):
         """In-place partial sorting for O(n) avg case"""
         while True:
-            if len(arr) == 1:
+            if len(arr) <= 1:
                 return
             pivot_idx = random.randint(0, len(arr)-1)
             pivot_val = arr[pivot_idx].embedding[axis]
@@ -105,30 +149,39 @@ class KDTreeIndex:
                     return
     
     def query(self, query: List[float], k: int) -> List[Chunk]:
+
+        if not self.root:
+            return []
+            
         heap = []
         
-        def _search(node):
+        def _search(node, best_dist):
             if not node:
-                return
+                return best_dist
+                
             dist = sum((x - y)**2 for x, y in zip(query, node.chunk.embedding))
-            if len(heap) < k or -dist > heap[0][0]:
-                if len(heap) == k:
-                    heapq.heappop(heap)
-                heapq.heappush(heap, (-dist, node.chunk))
             
+            if len(heap) < k:
+                heapq.heappush(heap, (-dist, node.chunk))
+                best_dist = -heap[0][0] if heap else float('inf')
+            elif dist < -heap[0][0]:
+                heapq.heappushpop(heap, (-dist, node.chunk))
+                best_dist = -heap[0][0]  
+
             axis_val = query[node.axis]
             node_val = node.chunk.embedding[node.axis]
             
-            if axis_val < node_val:
-                _search(node.left)
-                if (node_val - axis_val)**2 < -heap[0][0]:
-                    _search(node.right)
-            else:
-                _search(node.right)
-                if (axis_val - node_val)**2 < -heap[0][0]:
-                    _search(node.left)
+            first, second = (node.left, node.right) if axis_val < node_val else (node.right, node.left)
+            
+            best_dist = _search(first, best_dist)
+            
+            if (axis_val - node_val)**2 < best_dist:
+                best_dist = _search(second, best_dist)
+                
+            return best_dist
         
-        _search(self.root)
+        _search(self.root, float('inf'))
+        
         return [c for _, c in sorted(heap, reverse=True)]
 
 class LSHIndex:
