@@ -185,59 +185,91 @@ class KDTreeIndex:
         return [c for _, c in sorted(heap, reverse=True)]
 
 class LSHIndex:
-    __slots__ = ['tables', 'hyperplanes', 'num_tables', 'hash_size']
+    __slots__ = ['tables', 'hyperplanes', 'num_tables', 'hash_size', 'normalize', 'max_candidates']
     
-    def __init__(self, chunks: List[Chunk], num_tables=4, hash_size=8):
+    def __init__(self, chunks: List[Chunk], num_tables=6, hash_size=12, normalize=True, max_candidates=50):
+        
         self.num_tables = num_tables
         self.hash_size = hash_size
+        self.normalize = normalize
+        self.max_candidates = max_candidates
         self.tables: List[DefaultDict[int, List[Chunk]]] = [defaultdict(list) for _ in range(num_tables)]
         
         if not chunks:
             self.hyperplanes = []
             return
-            
+        
         dim = len(chunks[0].embedding)
-        self.hyperplanes = [
-            [random.gauss(0, 1) for _ in range(dim)]
-            for _ in range(num_tables * hash_size)
-        ]
+        self.hyperplanes = []
+        
+        for _ in range(num_tables * hash_size):
+
+            hyperplane = [random.gauss(0, 1) for _ in range(dim)]
+            
+            norm = math.sqrt(sum(x*x for x in hyperplane))
+            if norm > 0:
+                hyperplane = [x/norm for x in hyperplane]
+                
+            self.hyperplanes.append(hyperplane)
         
         for chunk in chunks:
+            embedding = chunk.embedding
+            
+            if normalize:
+                norm = math.sqrt(sum(x*x for x in embedding))
+                if norm > 0:
+                    embedding = [x/norm for x in embedding]
+            
             for ti in range(num_tables):
-                hash_val = self._compute_hash(chunk.embedding, ti)
+                hash_val = self._compute_hash(embedding, ti)
                 self.tables[ti][hash_val].append(chunk)
     
     def _compute_hash(self, vec: List[float], table_idx: int) -> int:
         hash_val = 0
         for h in range(self.hash_size):
             hp = self.hyperplanes[table_idx * self.hash_size + h]
-            hash_val |= (1 << h) if sum(x*y for x,y in zip(vec, hp)) >= 0 else 0
+            hash_val |= (1 << h) if sum(x*y for x, y in zip(vec, hp)) >= 0 else 0
         return hash_val
     
     def query(self, query: List[float], k: int) -> List[Chunk]:
+
+        if self.normalize:
+            norm = math.sqrt(sum(x*x for x in query))
+            if norm > 0:
+                query = [x/norm for x in query]
+        
         candidates = []
         for ti in range(self.num_tables):
             hash_val = self._compute_hash(query, ti)
             candidates.extend(self.tables[ti][hash_val])
         
-        # Remove duplicates without using set (since Chunk may not be hashable)
-        # We'll use a list to keep track of seen chunks by ID
+        if not candidates:
+            return []
+        
         unique_candidates = []
         seen_chunk_ids = set()
         
         for chunk in candidates:
-            # Use object ID as a unique identifier since Chunk may not have an id attribute
             chunk_id = id(chunk)
             if chunk_id not in seen_chunk_ids:
                 seen_chunk_ids.add(chunk_id)
                 unique_candidates.append(chunk)
-                
-                # Limit to 3*k candidates for efficiency
-                if len(unique_candidates) >= 3*k:
-                    break
         
-        # Rerank candidates using exact distance
-        return LinearIndex(unique_candidates).query(query, k)
+        if len(unique_candidates) > self.max_candidates:
+            dist_candidates = []
+            
+            for chunk in unique_candidates:
+                if self.normalize:
+                    dist = -sum(q*v for q, v in zip(query, chunk.embedding))
+                else:
+                    dist = sum((q-v)**2 for q, v in zip(query, chunk.embedding))
+                    
+                dist_candidates.append((dist, chunk))
+            
+            dist_candidates.sort()
+            unique_candidates = [c for _, c in dist_candidates[:self.max_candidates]]
+        
+        return LinearIndex(unique_candidates, normalize=self.normalize).query(query, k)
 
 
 class Indexer:
