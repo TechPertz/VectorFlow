@@ -1,22 +1,62 @@
 import heapq
 import random
-from typing import List, DefaultDict
+import math
+# import numpy as np
+from typing import List, DefaultDict, Optional, Tuple
 from collections import defaultdict
 from app.models import Chunk
 
 class LinearIndex:
-    def __init__(self, chunks: List[Chunk]):
+    def __init__(self, chunks: List[Chunk], normalize: bool = True, batch_size: int = 1000):
+        
         self.chunks = chunks
-
-    def query(self, query: List[float], k: int) -> List[Chunk]:
-        heap = []
+        self.normalize = normalize
+        self.batch_size = batch_size
+        self.normalized_embeddings = None
+        
+        if normalize and chunks:
+            self._normalize_embeddings()
+    
+    def _normalize_embeddings(self) -> None:
+        """Normalize all embeddings to unit length for faster dot product comparison"""
+        self.normalized_embeddings = []
         for chunk in self.chunks:
-            dist = sum((x - y)**2 for x, y in zip(query, chunk.embedding))
-            if len(heap) < k:
-                heapq.heappush(heap, (-dist, chunk))
+            vec = chunk.embedding
+            norm = math.sqrt(sum(x*x for x in vec))
+            if norm > 0:
+                self.normalized_embeddings.append([x/norm for x in vec])
             else:
-                heapq.heappushpop(heap, (-dist, chunk))
-        return [c for _, c in sorted(heap, reverse=True)]
+                self.normalized_embeddings.append(vec)  # Keep zero vectors as is
+    
+    def _compute_similarity(self, query: List[float], chunk_idx: int) -> float:
+        
+        if self.normalize:
+            return sum(q*v for q, v in zip(query, self.normalized_embeddings[chunk_idx]))
+        else:
+            return -sum((q-v)**2 for q, v in zip(query, self.chunks[chunk_idx].embedding))
+    
+    def query(self, query: List[float], k: int) -> List[Chunk]:
+
+        if self.normalize:
+            norm = math.sqrt(sum(x*x for x in query))
+            if norm > 0:
+                query = [x/norm for x in query]
+        
+        heap = []  
+        
+        for batch_start in range(0, len(self.chunks), self.batch_size):
+            batch_end = min(batch_start + self.batch_size, len(self.chunks))
+            
+            for i in range(batch_start, batch_end):
+                similarity = self._compute_similarity(query, i)
+                
+                if len(heap) < k:
+                    heapq.heappush(heap, (similarity, i))
+                elif similarity > heap[0][0]:
+                    heapq.heappushpop(heap, (similarity, i))
+        
+        sorted_results = sorted(heap, reverse=True)
+        return [self.chunks[idx] for _, idx in sorted_results]
 
 class KDTreeIndex:
     class Node:
