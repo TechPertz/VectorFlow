@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List
+from typing import List, Dict, Any
 from uuid import UUID
 
 from app.core.deps import get_db
@@ -7,6 +7,7 @@ from app.db.database import VectorDatabase
 from app.models import Library, LibraryCreate
 from app.services import Indexer
 from app.services.indexes import LinearIndex, KDTreeIndex, LSHIndex
+from app.services.embeddings import generate_cohere_embeddings
 
 router = APIRouter()
 
@@ -100,4 +101,63 @@ async def vector_search(
             detail=f"Query dimension mismatch. Expected {embedding_dim}"
         )
     
-    return lib.index.query(query, k) 
+    return lib.index.query(query, k)
+
+@router.post("/{library_id}/text-search", status_code=status.HTTP_200_OK)
+async def text_search(
+    library_id: UUID,
+    text_query: Dict[str, str],
+    k: int = 5,
+    db: VectorDatabase = Depends(get_db)
+):
+    """
+    Search for similar documents in the library using a text query.
+    The text is converted to an embedding using Cohere API.
+    
+    Example request body:
+    {"text": "What are transformer models?"}
+    """
+    # Validate input
+    if "text" not in text_query:
+        raise HTTPException(status_code=400, detail="Request body must contain a 'text' field")
+    
+    query_text = text_query["text"]
+    if not query_text or not isinstance(query_text, str):
+        raise HTTPException(status_code=400, detail="Text query must be a non-empty string")
+    
+    # Get the library
+    lib = await db.get_library(library_id)
+    if not lib or not lib.index:
+        raise HTTPException(status_code=400, detail="Library not indexed")
+    
+    try:
+        # Generate embedding for the query text using Cohere
+        embeddings = await generate_cohere_embeddings([query_text])
+        
+        # Use the generated embedding to perform the search
+        query_embedding = embeddings[0]
+        
+        # Return the search results
+        results = lib.index.query(query_embedding, k)
+        
+        # Extract relevant fields for the response to ensure proper serialization
+        serialized_results = []
+        for chunk in results:
+            serialized_results.append({
+                "id": str(chunk.id),
+                "text": chunk.text,
+                "metadata": chunk.metadata.dict()
+            })
+        
+        # Add the original query text to the response for reference
+        return {
+            "query_text": query_text,
+            "results_count": len(results),
+            "results": serialized_results
+        }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing text search: {str(e)}"
+        ) 
