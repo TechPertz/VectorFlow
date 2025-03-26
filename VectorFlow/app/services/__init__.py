@@ -1,3 +1,4 @@
-from .indexes import Indexer, LinearIndex
+"""VectorFlow services package"""
 
-__all__ = ["Indexer", "LinearIndex"] 
+# Re-export index implementations for backward compatibility
+from app.services.indexes import *
