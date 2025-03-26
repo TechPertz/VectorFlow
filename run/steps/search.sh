@@ -52,34 +52,32 @@ search() {
   # Always use rebuild_if_needed for better user experience
   REBUILD_IF_NEEDED="true"
   
+  # Get query based on search type
   if [ "$SEARCH_TYPE" = "1" ]; then
     # Text search
-    read -p "Enter your search query: " QUERY_TEXT
-    check_back "$QUERY_TEXT" && return 1
+    printf "\n${BLUE}Example search queries:${NC}\n"
+    printf "1) How do transformer models use attention?\n"
+    printf "2) What is tokenization in NLP?\n"
+    printf "3) How does BERT improve language understanding?\n"
+    printf "4) What is transfer learning in NLP?\n"
+    printf "5) Custom query\n"
+    read -p "Choose a query (1-5) or enter your own: " QUERY_CHOICE
+    check_back "$QUERY_CHOICE" && return 1
     
-    printf "Performing text search for: ${BLUE}$QUERY_TEXT${NC}\n"
+    case $QUERY_CHOICE in
+      1) QUERY_TEXT="How do transformer models use attention?" ;;
+      2) QUERY_TEXT="What is tokenization in NLP?" ;;
+      3) QUERY_TEXT="How does BERT improve language understanding?" ;;
+      4) QUERY_TEXT="What is transfer learning in NLP?" ;;
+      5) read -p "Enter your custom query: " QUERY_TEXT ;;
+      *) QUERY_TEXT="$QUERY_CHOICE" ;;
+    esac
     
-    RESPONSE=$(curl -s -X POST \
-      "http://localhost:8000/libraries/$LIB_ID/text-search?rebuild_if_needed=$REBUILD_IF_NEEDED" \
-      -H "Content-Type: application/json" \
-      -H "accept: application/json" \
-      -d "{\"text\":\"$QUERY_TEXT\"}")
-    
-    if echo "$RESPONSE" | grep -q "detail"; then
-      printf "${RED}Error during search:${NC}\n"
-      echo "$RESPONSE" | jq -r '.detail'
-    else
-      printf "${GREEN}Search results:${NC}\n"
-      COUNT=$(echo "$RESPONSE" | jq -r '.results_count')
-      printf "Found ${BLUE}$COUNT${NC} results\n\n"
-      
-      echo "$RESPONSE" | jq -r '.results[] | "ID: \(.id)\nText: \(.text)\n"'
-    fi
-    
+    printf "Using search query: ${BLUE}$QUERY_TEXT${NC}\n\n"
   else
     # Vector search (using a sample embedding for demo)
     printf "For demonstration, using a sample embedding vector\n"
-    printf "(In a real application, you would provide your own embeddings)\n"
+    printf "(In a real application, you would provide your own embeddings)\n\n"
     
     # Generate a random embedding for demo purposes
     EMBEDDING="["
@@ -90,24 +88,152 @@ search() {
       fi
     done
     EMBEDDING+="]"
+  fi
+  
+  # Ask if user wants to apply metadata filtering
+  printf "\n${YELLOW}=== Metadata Filtering ===${NC}\n"
+  printf "Metadata filtering can narrow down results by properties like name or creation date\n\n"
+  read -p "Do you want to filter results using metadata? (y/n): " USE_FILTER
+  
+  # Initialize metadata filter as empty JSON object
+  METADATA_FILTER="{}"
+  
+  if [[ "$USE_FILTER" =~ ^[Yy]$ ]]; then
+    # Build metadata filter dictionary
+    FILTER_DICT=()
     
-    printf "Performing vector search...\n"
+    printf "\n${BLUE}Metadata Filtering Examples:${NC}\n"
+    printf "  - For basic search by name: name:abstract\n"
+    printf "  - For dates from a certain point: created_at_after:2023-01-01\n"
+    printf "  - For dates before a point: created_at_before:2025-01-01\n"
+    printf "  - For text contains: name_contains:report\n\n"
+    
+    # First ask about name filtering
+    read -p "Do you want to filter by name? (y/n): " FILTER_NAME
+    if [[ "$FILTER_NAME" =~ ^[Yy]$ ]]; then
+      read -p "Enter exact name to match: " NAME_VALUE
+      if [ -n "$NAME_VALUE" ]; then
+        FILTER_DICT+=("\"name\": \"$NAME_VALUE\"")
+      fi
+    fi
+    
+    # Then ask about creation date
+    read -p "Do you want to filter by creation date after a certain date? (y/n): " FILTER_DATE
+    if [[ "$FILTER_DATE" =~ ^[Yy]$ ]]; then
+      read -p "Enter date in YYYY-MM-DD format: " DATE_VALUE
+      if [ -n "$DATE_VALUE" ]; then
+        if [[ "$DATE_VALUE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+          # Add the _after suffix for the key (not in the JSON)
+          FILTER_DICT+=("\"created_at_after\": \"$DATE_VALUE\"")
+        else
+          printf "${RED}Invalid date format. Using YYYY-MM-DD format.${NC}\n"
+        fi
+      fi
+    fi
+    
+    # Ask about name contains
+    read -p "Do you want to filter by text contained in name? (y/n): " FILTER_CONTAINS
+    if [[ "$FILTER_CONTAINS" =~ ^[Yy]$ ]]; then
+      read -p "Enter text to search for in name: " CONTAINS_VALUE
+      if [ -n "$CONTAINS_VALUE" ]; then
+        # Add the _contains suffix for the key
+        FILTER_DICT+=("\"name_contains\": \"$CONTAINS_VALUE\"")
+      fi
+    fi
+    
+    # Build the JSON object from the collected filters
+    if [ ${#FILTER_DICT[@]} -gt 0 ]; then
+      METADATA_FILTER="{"
+      for i in "${!FILTER_DICT[@]}"; do
+        METADATA_FILTER+="${FILTER_DICT[$i]}"
+        if [ $i -lt $(( ${#FILTER_DICT[@]} - 1 )) ]; then
+          METADATA_FILTER+=", "
+        fi
+      done
+      METADATA_FILTER+="}"
+    fi
+    
+    printf "Using metadata filter: ${BLUE}$METADATA_FILTER${NC}\n\n"
+  fi
+  
+  # Perform the search with metadata filter
+  printf "${YELLOW}=== Performing Search ===${NC}\n"
+  
+  if [ "$SEARCH_TYPE" = "1" ]; then
+    # Text search
+    printf "Performing text search for: ${BLUE}$QUERY_TEXT${NC}\n"
+    if [ "$METADATA_FILTER" != "{}" ]; then
+      printf "With metadata filter: ${BLUE}$METADATA_FILTER${NC}\n"
+    fi
+    
+    # Create the request body with text and metadata_filter
+    REQUEST_BODY="{\"text\":\"$QUERY_TEXT\", \"metadata_filter\":$METADATA_FILTER}"
+    
+    # Debug: Show the request
+    printf "\nSending request: ${BLUE}$REQUEST_BODY${NC}\n\n"
+    
+    RESPONSE=$(curl -s -X POST \
+      "http://localhost:8000/libraries/$LIB_ID/text-search?rebuild_if_needed=$REBUILD_IF_NEEDED" \
+      -H "Content-Type: application/json" \
+      -H "accept: application/json" \
+      -d "$REQUEST_BODY")
+    
+    if echo "$RESPONSE" | grep -q "detail"; then
+      printf "${RED}Error during search:${NC}\n"
+      echo "$RESPONSE" | jq || echo "$RESPONSE"
+    else
+      printf "\n${GREEN}=== Search Results ===${NC}\n"
+      COUNT=$(echo "$RESPONSE" | jq -r '.results_count')
+      
+      if [ "$METADATA_FILTER" != "{}" ]; then
+        printf "Found ${BLUE}$COUNT${NC} results with metadata filtering\n\n"
+      else
+        printf "Found ${BLUE}$COUNT${NC} results\n\n"
+      fi
+      
+      if [ "$COUNT" -gt 0 ]; then
+        echo "$RESPONSE" | jq -r '.results[] | "ID: \(.id)\nText: \(.text)\nMetadata: \(.metadata | @json)\n"'
+      else
+        printf "${YELLOW}No results found. Try a different query or adjust your metadata filters.${NC}\n"
+      fi
+    fi
+  else
+    # Vector search
+    printf "Performing vector search with embedding...\n"
+    if [ "$METADATA_FILTER" != "{}" ]; then
+      printf "With metadata filter: ${BLUE}$METADATA_FILTER${NC}\n"
+    fi
+    
+    # Create the request body with query and metadata_filter
+    REQUEST_BODY="{\"query\":$EMBEDDING, \"metadata_filter\":$METADATA_FILTER}"
+    
+    # Debug: Show the request
+    printf "\nSending request: ${BLUE}$REQUEST_BODY${NC}\n\n"
     
     RESPONSE=$(curl -s -X POST \
       "http://localhost:8000/libraries/$LIB_ID/search?rebuild_if_needed=$REBUILD_IF_NEEDED" \
       -H "Content-Type: application/json" \
       -H "accept: application/json" \
-      -d "$EMBEDDING")
+      -d "$REQUEST_BODY")
     
     if echo "$RESPONSE" | grep -q "detail"; then
       printf "${RED}Error during search:${NC}\n"
-      echo "$RESPONSE" | jq -r '.detail'
+      echo "$RESPONSE" | jq || echo "$RESPONSE"
     else
-      printf "${GREEN}Search results:${NC}\n"
+      printf "\n${GREEN}=== Search Results ===${NC}\n"
       COUNT=$(echo "$RESPONSE" | jq length)
-      printf "Found ${BLUE}$COUNT${NC} results\n\n"
       
-      echo "$RESPONSE" | jq -r '.[] | "ID: \(.id)\nText: \(.text)\n"'
+      if [ "$METADATA_FILTER" != "{}" ]; then
+        printf "Found ${BLUE}$COUNT${NC} results with metadata filtering\n\n"
+      else
+        printf "Found ${BLUE}$COUNT${NC} results\n\n"
+      fi
+      
+      if [ "$COUNT" -gt 0 ]; then
+        echo "$RESPONSE" | jq -r '.[] | "ID: \(.id)\nText: \(.text)\nMetadata: \(.metadata | @json)\n"'
+      else
+        printf "${YELLOW}No results found. Try a different query or adjust your metadata filters.${NC}\n"
+      fi
     fi
   fi
   
