@@ -6,6 +6,7 @@ from app.core.deps import get_db
 from app.db.database import VectorDatabase
 from app.models import Chunk, ChunkCreate, BatchTextInput, ChunkMetadata
 from app.services.embeddings import generate_cohere_embeddings
+from app.services.indexes import Indexer
 
 router = APIRouter()
 
@@ -37,9 +38,28 @@ async def delete_chunk(
     """
     try:
         await db.delete_chunk(library_id, document_id, chunk_id)
-        return {"status": "deleted"}
+        
+        # Check the library to determine if we need to show index warnings
+        lib = await db.get_library(library_id)
+        
+        response = {
+            "status": "deleted", 
+            "message": f"Chunk {chunk_id} has been deleted"
+        }
+        
+        if not lib.index:
+            response["warning"] = "The library index has been reset. You must rebuild the index before performing searches."
+        elif hasattr(lib.index, 'pending_changes') and lib.index.pending_changes:
+            if hasattr(lib.index, 'check_rebuild_needed') and lib.index.check_rebuild_needed():
+                response["warning"] = "The index may need rebuilding due to significant changes. Searches will automatically rebuild if needed."
+            else:
+                response["info"] = "The index has been updated incrementally. You can perform searches without rebuilding."
+                
+        return response
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @router.post("/{library_id}/batch-chunks", status_code=status.HTTP_201_CREATED, response_model=List[Chunk])
 async def create_batch_chunks_with_embeddings(

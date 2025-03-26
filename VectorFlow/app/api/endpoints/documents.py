@@ -55,6 +55,24 @@ async def delete_document(
     """
     try:
         await db.delete_document(library_id, document_id)
-        return {"status": "deleted"}
+        
+        # Check the library to determine if we need to show index warnings
+        lib = await db.get_library(library_id)
+        
+        response = {
+            "status": "deleted", 
+            "message": f"Document {document_id} and all its chunks have been deleted"
+        }
+        
+        if not lib.index:
+            response["warning"] = "The library index has been reset. You must rebuild the index before performing searches."
+        elif hasattr(lib.index, 'pending_changes') and lib.index.pending_changes:
+
+            if hasattr(lib.index, 'check_rebuild_needed') and lib.index.check_rebuild_needed():
+                response["warning"] = "The index may need rebuilding due to significant changes. Searches will automatically rebuild if needed."
+            else:
+                response["info"] = "The index has been updated incrementally. You can perform searches without rebuilding."
+                
+        return response
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) 
