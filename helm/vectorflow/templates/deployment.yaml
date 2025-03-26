@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vectorflow.fullname" . }}
+  labels:
+    {{- include "vectorflow.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "vectorflow.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vectorflow.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "vectorflow.serviceAccountName" . }}
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: API_ENV
+          value: "production"
+        {{- if .Values.environment.cohere_api_key }}
+        - name: COHERE_API_KEY
+          value: {{ .Values.environment.cohere_api_key }}
+        {{- end }}
+        ports:
+        - name: http
+          containerPort: 8000
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http 

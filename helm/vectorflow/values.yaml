@@ -1,0 +1,20 @@
+replicaCount: 1
+
+image:
+  repository: vectorflow
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 8000
+
+environment:
+  cohere_api_key: ""
