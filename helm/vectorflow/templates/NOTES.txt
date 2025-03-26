@@ -1,0 +1,8 @@
+VectorFlow installed: {{ .Release.Name }}
+
+API Endpoints:
+- Cluster: http://{{ include "vectorflow.fullname" . }}:{{ .Values.service.port }}
+- Local: kubectl port-forward svc/{{ include "vectorflow.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+To check deployment status:
+kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }} 
