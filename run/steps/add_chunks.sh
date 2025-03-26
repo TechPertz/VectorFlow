@@ -77,7 +77,7 @@ add_chunks() {
     COUNT=1
     
     while true; do
-      printf "${BLUE}Chunk 
+      printf "${BLUE}Chunk ${COUNT}:${NC}\n"
       printf "Enter text (or press Enter twice to finish): \n"
       
       
@@ -111,11 +111,11 @@ add_chunks() {
     done
     
     
-    if [ ${
+    if [ ${#TEXTS[@]} -eq 0 ]; then
       printf "${RED}No text chunks were provided. Operation cancelled.${NC}\n"
     else
       
-      printf "${GREEN}Preparing data for ${
+      printf "${GREEN}Preparing data for ${#TEXTS[@]} chunks...${NC}\n"
       
       
       JSON_TEXTS="["
@@ -123,7 +123,7 @@ add_chunks() {
         
         ESCAPED_TEXT=$(echo "${TEXTS[$i]}" | sed 's/"/\\"/g')
         JSON_TEXTS+="\"$ESCAPED_TEXT\""
-        if [ $i -lt $((${
+        if [ $i -lt $((${#TEXTS[@]} - 1)) ]; then
           JSON_TEXTS+=","
         fi
       done
@@ -133,7 +133,7 @@ add_chunks() {
       JSON_METADATA="["
       for i in "${!METADATA[@]}"; do
         JSON_METADATA+="${METADATA[$i]}"
-        if [ $i -lt $((${
+        if [ $i -lt $((${#METADATA[@]} - 1)) ]; then
           JSON_METADATA+=","
         fi
       done
@@ -142,7 +142,7 @@ add_chunks() {
       
       JSON_PAYLOAD="{\"texts\": $JSON_TEXTS, \"metadata\": $JSON_METADATA, \"document_id\": \"$DOC_ID\"}"
       
-      printf "${GREEN}Sending ${
+      printf "${GREEN}Sending ${#TEXTS[@]} chunks to API...${NC}\n"
       RESPONSE=$(curl -L -s -w "\n%{http_code}" -X POST "http://localhost:8000/libraries/$LIB_ID/batch-chunks" \
         -H "Content-Type: application/json" \
         -d "$JSON_PAYLOAD")
@@ -151,7 +151,7 @@ add_chunks() {
       BODY=$(echo "$RESPONSE" | sed '$d')
       
       if [ "$HTTP_CODE" -eq 201 ] || [ "$HTTP_CODE" -eq 200 ]; then
-        printf "${GREEN}Successfully added ${
+        printf "${GREEN}Successfully added ${#TEXTS[@]} chunks with embeddings.${NC}\n"
       else
         ERROR_MSG=$(echo "$BODY" | jq -r .detail 2>/dev/null || echo "Unknown error")
         printf "${RED}Error adding chunks: $ERROR_MSG (HTTP $HTTP_CODE)${NC}\n"
