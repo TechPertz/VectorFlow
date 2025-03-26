@@ -135,14 +135,35 @@ async def get_index_status(library_id: UUID, db: VectorDatabase = Depends(get_db
 @router.post("/{library_id}/search", status_code=status.HTTP_200_OK)
 async def vector_search(
     library_id: UUID, 
-    query: List[float], 
+    request: Dict[str, Any],
     k: int = 5, 
     rebuild_if_needed: bool = Query(False, description="Rebuild the index if it needs rebuilding"),
     db: VectorDatabase = Depends(get_db)
 ):
     """
     Search for similar documents in the library using a vector query.
+    
+    The request body should contain:
+    - query: Required. The embedding vector to search with
+    - metadata_filter: Optional. Metadata filters to apply to the search results
+    
+    Example metadata filters:
+    ```
+    {
+        "date_after": "2023-01-01",            # Return only chunks with date > 2023-01-01
+        "category": "finance",                 # Exact match on category field
+        "title_contains": "quarterly report",  # Title field contains this substring
+        "priority_before": 3                   # Priority field less than 3
+    }
+    ```
     """
+    # Extract the query vector and metadata filter from the request
+    if "query" not in request:
+        raise HTTPException(status_code=400, detail="Request body must contain a 'query' vector")
+    
+    query = request["query"]
+    metadata_filter = request.get("metadata_filter", None)
+    
     lib = await db.get_library(library_id)
     if not lib:
         raise HTTPException(status_code=404, detail="Library not found")
@@ -153,12 +174,10 @@ async def vector_search(
             detail="Library not indexed. Please build an index first."
         )
     
-
     needs_rebuild = False
     if hasattr(lib.index, 'check_rebuild_needed'):
         needs_rebuild = lib.index.check_rebuild_needed()
     
-
     if needs_rebuild and rebuild_if_needed:
         try:
             algorithm = "linear"
@@ -183,7 +202,6 @@ async def vector_search(
             detail="Index needs rebuilding. Set rebuild_if_needed=true or rebuild manually."
         )
     
-
     try:
         if isinstance(lib.index, LinearIndex):
             if not lib.index.chunks:
@@ -206,7 +224,19 @@ async def vector_search(
                 detail=f"Query dimension mismatch. Expected {embedding_dim}"
             )
         
-        return lib.index.query(query, k)
+        # Create metadata filter if provided
+        filter_func = None
+        if metadata_filter:
+            try:
+                filter_func = Indexer.create_metadata_filter(**metadata_filter)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid metadata filter: {str(e)}"
+                )
+        
+        # Apply the filter to the query
+        return lib.index.query(query, k, metadata_filter=filter_func)
     except Exception as e:
         if not isinstance(e, HTTPException):
             raise HTTPException(
@@ -218,7 +248,7 @@ async def vector_search(
 @router.post("/{library_id}/text-search", status_code=status.HTTP_200_OK)
 async def text_search(
     library_id: UUID,
-    text_query: Dict[str, str],
+    request: Dict[str, Any],
     k: int = 5,
     rebuild_if_needed: bool = Query(False, description="Rebuild the index if it needs rebuilding"),
     db: VectorDatabase = Depends(get_db)
@@ -226,11 +256,38 @@ async def text_search(
     """
     Search for similar documents in the library using a text query.
     The text is converted to an embedding using Cohere API.
+    
+    The request body should contain:
+    - text: Required. The text query to convert to an embedding and search with
+    - metadata_filter: Optional. Metadata filters to apply to the search results
+                       
+    Example metadata filters:
+    ```
+    {
+        "date_after": "2023-01-01",            # Return only chunks with date > 2023-01-01
+        "category": "finance",                 # Exact match on category field
+        "title_contains": "quarterly report",  # Title field contains this substring
+        "priority_before": 3                   # Priority field less than 3
+    }
+    ```
+    
+    Example request:
+    ```json
+    {
+        "text": "How to implement machine learning algorithms",
+        "metadata_filter": {
+            "category": "tech",
+            "date_after": "2022-01-01"
+        }
+    }
+    ```
     """
-    if "text" not in text_query:
+    if "text" not in request:
         raise HTTPException(status_code=400, detail="Request body must contain a 'text' field")
     
-    query_text = text_query["text"]
+    query_text = request["text"]
+    metadata_filter = request.get("metadata_filter", None)
+    
     if not query_text or not isinstance(query_text, str):
         raise HTTPException(status_code=400, detail="Text query must be a non-empty string")
     
@@ -277,7 +334,19 @@ async def text_search(
         
         query_embedding = embeddings[0]
         
-        results = lib.index.query(query_embedding, k)
+        # Create metadata filter if provided
+        filter_func = None
+        if metadata_filter:
+            try:
+                filter_func = Indexer.create_metadata_filter(**metadata_filter)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid metadata filter: {str(e)}"
+                )
+        
+        # Apply the filter to the query
+        results = lib.index.query(query_embedding, k, metadata_filter=filter_func)
         
         serialized_results = []
         for chunk in results:
