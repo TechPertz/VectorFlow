@@ -61,4 +61,58 @@ list_chunks() {
   check_back "$INPUT" && return 1
   
   return 0
+}
+
+show_index_status() {
+  show_header
+  printf "${YELLOW}Showing Index Status${NC}\n\n"
+  
+  if [ -z "$LIB_ID" ]; then
+    printf "${RED}No library ID specified${NC}\n"
+    read -p "Enter library ID (or type 'back' to return): " LIB_ID
+    check_back "$LIB_ID" && return 1
+  fi
+  
+  printf "Getting index status for library: ${BLUE}$LIB_ID${NC}\n\n"
+  
+  RESPONSE=$(curl -s "http://localhost:8000/libraries/$LIB_ID/index")
+  
+  if echo "$RESPONSE" | grep -q "detail"; then
+    printf "${RED}Error:${NC}\n"
+    echo "$RESPONSE" | jq -r '.detail'
+  else
+    STATUS=$(echo "$RESPONSE" | jq -r '.status')
+    ALGORITHM=$(echo "$RESPONSE" | jq -r '.algorithm')
+    
+    printf "Index Status: "
+    if [ "$STATUS" = "current" ]; then
+      printf "${GREEN}$STATUS${NC}\n"
+    elif [ "$STATUS" = "modified" ]; then
+      printf "${YELLOW}$STATUS${NC}\n"
+    elif [ "$STATUS" = "needs_rebuild" ]; then
+      printf "${RED}$STATUS${NC}\n"
+    else
+      printf "${RED}$STATUS${NC}\n"
+    fi
+    
+    if [ "$ALGORITHM" != "null" ]; then
+      printf "Algorithm: ${BLUE}$ALGORITHM${NC}\n"
+    fi
+    
+    printf "\nDetailed statistics:\n"
+    echo "$RESPONSE" | jq '.stats'
+    
+    if [ "$STATUS" = "modified" ] || [ "$STATUS" = "needs_rebuild" ]; then
+      printf "\n${YELLOW}Index needs updating. Do you want to rebuild it now?${NC} (y/n): "
+      read REBUILD
+      if [[ "$REBUILD" =~ ^[Yy]$ ]]; then
+        build_index
+        return $?
+      fi
+    fi
+  fi
+  
+  read -p "Press Enter to continue (or type 'back' to return to menu): " INPUT
+  check_back "$INPUT" && return 1
+  return 0
 } 
