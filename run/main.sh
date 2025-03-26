@@ -12,6 +12,7 @@ source "$SCRIPT_DIR/steps/build_index.sh"
 source "$SCRIPT_DIR/steps/search.sh"
 source "$SCRIPT_DIR/steps/list_operations.sh"
 source "$SCRIPT_DIR/steps/set_ids.sh"
+source "$SCRIPT_DIR/steps/delete_operations.sh"
 
 main() {
   
@@ -113,14 +114,16 @@ show_custom_menu() {
     printf "3) Add Chunks\n"
     printf "4) Build an Index\n"
     printf "5) Search\n"
+    printf "6) Delete Operations\n"
     printf "7) List Documents\n"
     printf "8) List Libraries\n"
     printf "9) List Chunks\n"
+    printf "10) Show Index Status\n"
     printf "b) Back to Main Menu\n"
     printf "h) Help\n"
     printf "e) Exit\n\n"
     printf "${YELLOW}(Type 'back' to return to main menu)${NC}\n"
-    read -p "Choose a step (0-9, h, b, e) or 'exit' to quit: " CHOICE
+    read -p "Choose a step (0-10, h, b, e) or 'exit' to quit: " CHOICE
     
     check_back "$CHOICE" && return 1
     
@@ -133,9 +136,11 @@ show_custom_menu() {
       3) add_chunks ;;
       4) build_index ;;
       5) search ;;
+      6) show_delete_menu ;;
       7) list_documents ;;
       8) list_libraries ;;
       9) list_chunks ;;
+      10) show_index_status ;;
       h|H|help) 
         show_help
         read -p "Press Enter to continue (or type 'back' to return to main menu): " INPUT
@@ -152,6 +157,42 @@ show_custom_menu() {
       *) 
         printf "${RED}Invalid choice. Please select a valid option.${NC}\n"
         read -p "Press Enter to continue (or type 'back' to return to main menu): " INPUT
+        check_back "$INPUT" && return 1
+        ;;
+    esac
+  done
+}
+
+show_delete_menu() {
+  while true; do
+    show_header
+    
+    printf "${YELLOW}Delete Operations${NC}\n\n"
+    printf "${YELLOW}Current Settings:${NC}\n"
+    [ ! -z "$LIB_ID" ] && printf "Library ID: ${BLUE}$LIB_ID${NC}\n" || printf "Library ID: ${RED}Not set${NC}\n"
+    [ ! -z "$DOC_ID" ] && printf "Document ID: ${BLUE}$DOC_ID${NC}\n" || printf "Document ID: ${RED}Not set${NC}\n"
+    printf "\n"
+    
+    printf "${BLUE}DELETE OPERATIONS:${NC}\n"
+    printf "1) Delete a Library\n"
+    printf "2) Delete a Document\n"
+    printf "3) Delete a Chunk\n"
+    printf "b) Back to Custom Menu\n\n"
+    
+    read -p "Choose an operation (1-3, b) or 'back' to return: " DELETE_CHOICE
+    
+    check_back "$DELETE_CHOICE" && return 1
+    
+    case $DELETE_CHOICE in
+      1) delete_library ;;
+      2) delete_document ;;
+      3) delete_chunk ;;
+      b|B|back) 
+        return 0
+        ;;
+      *) 
+        printf "${RED}Invalid choice. Please select a valid option.${NC}\n"
+        read -p "Press Enter to continue (or type 'back' to return): " INPUT
         check_back "$INPUT" && return 1
         ;;
     esac
